@@ -1,0 +1,123 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+
+@theme static {
+  --color-brand: #166534;
+  --color-brand-dark: #14532d;
+  --color-brand-soft: #2f7d4f;
+  --color-brand-light: #dcecdf;
+  --color-brand-pine: #005746;
+  --color-brand-pine-light: #087665;
+  --color-brand-teal: #044a3e;
+  --color-brand-mint: #70e6dc;
+  --color-brand-red: #a80202;
+}
+/* Base styles: Tailwind classes can override these */
+@layer base {
+  :root {
+    --bg: #eef5ef;           /* page background */
+    --text: #14261b;         /* main text */
+    --primary: #166534;      /* buttons */
+    --primary-text: #ffffff; /* text on buttons */
+    --border: #bcd5c2;       /* lines and input borders */
+    --card: #ffffff;         /* table background */
+    --table-head: #dcecdf;   /* table header */
+    --font: 'Poppins', system-ui, sans-serif;
+
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+  }
+
+  #root {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+
+  h1, h2, h3 {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  button {
+    background: var(--primary);
+    color: var(--primary-text);
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease,
+      transform 0.1s ease, box-shadow 0.2s ease;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:active:not(:disabled) { transform: scale(0.95); }
+
+  input, select {
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #ffffff;
+    color: var(--text);
+    font-family: inherit;
+  }
+
+  table {
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  th { background: var(--table-head); }
+  th, td { border-bottom: 1px solid var(--border); }
+
+  /* Respect people who turn animations off in their device settings */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}
+
+/* Animations used by the confirmation popup */
+@keyframes confirm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes confirm-pop {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* the login warning (wrong branch): appears with a short shake */
+@keyframes login-warn {
+  0% { opacity: 0; transform: translateX(0); }
+  20% { opacity: 1; transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+  100% { transform: translateX(0); }
+}
+/* Edge adds its own "show password" eye (and a clear X) inside password boxes; the login page has
+   its own eye button, so the browser's is hidden to avoid two eyes */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
+/* Printing a receipt: only the receipt shows, sized for a small thermal printer */
+@media print {
+  body * { visibility: hidden; }
+  .print-receipt, .print-receipt * { visibility: visible; }
+  .print-receipt { position: absolute; inset: 0 auto auto 0; width: 72mm; padding: 0; box-shadow: none; }
+  .no-print { display: none !important; }
+}
