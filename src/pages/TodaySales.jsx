@@ -5,7 +5,7 @@ import { loadTodaySales, voidSale } from '../lib/pos'
 import { confirmDialog, alertDialog } from '../components/Confirm'
 
 // Today's walk-in sales at this branch. Void puts the cylinders back in stock.
-export default function TodaySales({ branch, onChange }) {
+export default function TodaySales({ branch, onChange, onReprint }) {
   const [sales, setSales] = useState(null)
   const [error, setError] = useState('')
 
@@ -100,9 +100,30 @@ export default function TodaySales({ branch, onChange }) {
                       <span className="no-underline">Voided</span>
                     ) : (
                       s.groupId && (
-                        <button className="bg-brand-red px-3 py-1 text-[13px]" onClick={() => doVoid(s)}>
-                          Void
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            className="border border-(color:--border) bg-white px-3 py-1 text-[13px] text-brand-pine"
+                            onClick={() =>
+                              onReprint({
+                                groupId: s.groupId,
+                                time: s.time,
+                                lines: s.lines,
+                                discount: s.discount,
+                                total: s.total,
+                                payment: s.gcash ? 'gcash' : 'cash',
+                                cash: 0,
+                                customerName: s.customer,
+                                delivery: s.delivery,
+                                address: s.address,
+                              })
+                            }
+                          >
+                            Reprint
+                          </button>
+                          <button className="bg-brand-red px-3 py-1 text-[13px]" onClick={() => doVoid(s)}>
+                            Void
+                          </button>
+                        </div>
                       )
                     )}
                   </td>

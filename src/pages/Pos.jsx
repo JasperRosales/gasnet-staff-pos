@@ -6,6 +6,7 @@ import { confirmDialog, alertDialog } from '../components/Confirm'
 import PosLayout from '../components/PosLayout'
 import Receipt from '../components/Receipt'
 import TodaySales from './TodaySales'
+import { getPrintMode, savePrintMode } from '../lib/printSettings'
 import Inventory from './Inventory'
 
 const TABS = [
@@ -45,6 +46,13 @@ export default function Pos({ branch, fullName }) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [receipt, setReceipt] = useState(null)
+  const [printMode, setPrintMode] = useState(getPrintMode) // 'auto' | 'manual'
+
+  const changePrintMode = (mode) => {
+    setPrintMode(mode)
+    savePrintMode(mode)
+  }
+  const closeReceipt = useCallback(() => setReceipt(null), [])
 
   const refresh = useCallback(async () => {
     try {
@@ -122,6 +130,7 @@ export default function Pos({ branch, fullName }) {
         customerName: form.customerName,
         delivery: form.delivery,
         address: form.address,
+        autoPrint: printMode === 'auto',
       })
       clearSale()
     } catch (e) {
@@ -135,7 +144,7 @@ export default function Pos({ branch, fullName }) {
   return (
     <PosLayout branch={branch} fullName={fullName} tabs={TABS} active={tab} onSelect={setTab}>
       {tab === 'today' ? (
-        <TodaySales branch={branch} onChange={refresh} />
+        <TodaySales branch={branch} onChange={refresh} onReprint={(sale) => setReceipt({ ...sale, reprint: true })} />
       ) : tab === 'inventory' ? (
         <Inventory branch={branch} />
       ) : (
@@ -178,7 +187,21 @@ export default function Pos({ branch, fullName }) {
 
           {/* Cart and payment */}
           <aside className={`${CARD} flex flex-col gap-4 self-start p-4`}>
-            <h2 className="m-0 text-xl">Current sale</h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="m-0 text-xl">Current sale</h2>
+              <div className="flex items-center gap-1 text-[12px]" title="Auto prints the receipt right after each sale">
+                <span className="mr-1 text-gray-500">Receipt</span>
+                {['auto', 'manual'].map((m) => (
+                  <button
+                    key={m}
+                    className={`px-2.5 py-1 text-[12px] capitalize ${printMode === m ? 'bg-brand-pine text-white' : 'border border-(color:--border) bg-white text-brand-pine'}`}
+                    onClick={() => changePrintMode(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {lines.length === 0 ? (
               <p className="m-0 text-[14px] text-gray-500">Tap a cylinder to add it.</p>
@@ -304,7 +327,15 @@ export default function Pos({ branch, fullName }) {
         </div>
       )}
 
-      {receipt && <Receipt sale={receipt} branch={branch} cashier={fullName} onClose={() => setReceipt(null)} />}
+      {receipt && (
+        <Receipt
+          sale={receipt}
+          branch={branch}
+          cashier={fullName}
+          autoPrint={Boolean(receipt.autoPrint)}
+          onClose={closeReceipt}
+        />
+      )}
     </PosLayout>
   )
 }

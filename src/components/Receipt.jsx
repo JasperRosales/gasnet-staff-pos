@@ -1,10 +1,25 @@
+import { useEffect } from 'react'
 import Modal from './Modal'
 import { peso } from '../lib/money'
 import { branchName } from '../lib/branches'
 
-// The receipt after a sale: Print sends only the receipt to the printer
-export default function Receipt({ sale, branch, cashier, onClose }) {
+// The receipt after a sale: Print sends only the receipt to the printer.
+// autoPrint: opens the print window right away and closes the receipt when printing is done.
+export default function Receipt({ sale, branch, cashier, onClose, autoPrint = false }) {
   const time = new Date(sale.time)
+
+  useEffect(() => {
+    if (!autoPrint) return
+    const done = () => onClose()
+    window.addEventListener('afterprint', done)
+    // wait a moment so the logo is loaded before printing
+    const t = setTimeout(() => window.print(), 300)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('afterprint', done)
+    }
+  }, [autoPrint, onClose])
+
   return (
     <Modal onClose={onClose}>
       <div className="print-receipt font-mono text-[13px] text-gray-900">
@@ -13,6 +28,7 @@ export default function Receipt({ sale, branch, cashier, onClose }) {
           <div className="font-semibold">{branchName(branch)} branch</div>
           <div>{time.toLocaleString('en-PH')}</div>
           <div className="text-[11px] text-gray-500">Ref {sale.groupId.slice(0, 8).toUpperCase()}</div>
+          {sale.reprint && <div className="font-semibold">*** REPRINT ***</div>}
         </div>
         <hr className="my-2 border-dashed" />
         {sale.lines.map((l) => (
@@ -59,7 +75,7 @@ export default function Receipt({ sale, branch, cashier, onClose }) {
 
       <div className="no-print mt-5 flex justify-end gap-2">
         <button className="border border-(color:--border) bg-white text-brand-pine" onClick={onClose}>
-          New sale
+          {sale.reprint ? 'Close' : 'New sale'}
         </button>
         <button className="bg-brand-pine" onClick={() => window.print()}>
           Print

@@ -49,7 +49,7 @@ export async function loadTodaySales(branch) {
   start.setHours(0, 0, 0, 0)
   const { data, error } = await supabase
     .from('orders')
-    .select('id, group_id, item_name, quantity, unit_price, discount, total_price, status, accepted_at, customer_name, customer_type, paid_gcash, delivery_status, remarks')
+    .select('id, group_id, item_name, quantity, unit_price, discount, total_price, status, accepted_at, customer_name, customer_address, customer_type, paid_gcash, delivery_status, remarks')
     .eq('branch', branch)
     .eq('source', 'walkin')
     .in('status', ['accepted', 'rejected'])
@@ -66,6 +66,7 @@ export async function loadTodaySales(branch) {
         groupId: o.group_id,
         time: o.accepted_at,
         customer: o.customer_name,
+        address: o.customer_address,
         customerType: o.customer_type,
         gcash: o.paid_gcash,
         delivery: Boolean(o.delivery_status),
