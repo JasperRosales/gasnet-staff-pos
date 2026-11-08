@@ -6,9 +6,11 @@ import { confirmDialog, alertDialog } from '../components/Confirm'
 import PosLayout from '../components/PosLayout'
 import Receipt from '../components/Receipt'
 import TodaySales from './TodaySales'
+import Inventory from './Inventory'
 
 const TABS = [
   { key: 'register', label: 'Register' },
+  { key: 'inventory', label: 'Inventory' },
   { key: 'today', label: "Today's sales" },
 ]
 
@@ -134,6 +136,8 @@ export default function Pos({ branch, fullName }) {
     <PosLayout branch={branch} fullName={fullName} tabs={TABS} active={tab} onSelect={setTab}>
       {tab === 'today' ? (
         <TodaySales branch={branch} onChange={refresh} />
+      ) : tab === 'inventory' ? (
+        <Inventory branch={branch} />
       ) : (
         <div className="grid grid-cols-[1fr_380px] gap-5 max-[900px]:grid-cols-1">
           {/* Products */}
