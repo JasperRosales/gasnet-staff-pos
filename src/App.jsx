@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
-import { confirmDialog } from './components/Confirm'
+import { confirmDialog } from './lib/dialogs'
 import Login from './pages/Login'
 import Pos from './pages/Pos'
 
@@ -22,7 +22,8 @@ function StatusScreen({ title, text }) {
 
 export default function App() {
   const [session, setSession] = useState(undefined)
-  const [profile, setProfile] = useState(undefined)
+  // the profile, with the user it was loaded for (undefined while loading)
+  const [loaded, setLoaded] = useState({ userId: null, profile: undefined })
   // true while the login page checks the account's branch (the POS must not open yet)
   const [checkingLogin, setCheckingLogin] = useState(false)
 
@@ -35,15 +36,19 @@ export default function App() {
   const userId = session?.user?.id
 
   useEffect(() => {
-    setProfile(undefined)
     if (!userId) return
+    let live = true
     supabase
       .from('profiles')
       .select('role, status, branch, full_name')
       .eq('id', userId)
       .maybeSingle()
-      .then(({ data }) => setProfile(data ?? null))
+      .then(({ data }) => live && setLoaded({ userId, profile: data ?? null }))
+    return () => {
+      live = false
+    }
   }, [userId])
+  const profile = loaded.userId === userId ? loaded.profile : undefined
 
   if (session === undefined) return <p>Loading...</p>
   if (!session || checkingLogin) return <Login onCheckingChange={setCheckingLogin} />

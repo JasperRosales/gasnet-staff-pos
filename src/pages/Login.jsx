@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { BRANCHES, branchName } from '../lib/branches'
 import { EMAIL_DOMAIN } from '../lib/accountRules'
-import { alertDialog } from '../components/Confirm'
+import { alertDialog } from '../lib/dialogs'
 import { useAddress, go, branchSlug, branchOfSlug } from '../lib/address'
 
 export const WEBSITE_URL = 'https://towngaz-web.vercel.app/' // the customer website

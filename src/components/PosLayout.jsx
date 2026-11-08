@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabaseClient'
 import { branchName } from '../lib/branches'
-import { confirmDialog } from './Confirm'
+import { confirmDialog } from '../lib/dialogs'
 
 // Same top bar picture as the admin portal: blue-green band, then white and red stripes
 const NAVBAR_IMAGE = '/navbarcolor.jpg'

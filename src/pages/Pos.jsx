@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { peso } from '../lib/money'
 import { loadProducts, checkout } from '../lib/pos'
-import { confirmDialog, alertDialog } from '../components/Confirm'
+import { confirmDialog, alertDialog } from '../lib/dialogs'
 import PosLayout from '../components/PosLayout'
 import Receipt from '../components/Receipt'
 import TodaySales from './TodaySales'
@@ -64,8 +64,14 @@ export default function Pos({ branch, fullName }) {
   }, [branch])
 
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    let live = true
+    loadProducts(branch)
+      .then((list) => live && (setProducts(list), setLoadError('')))
+      .catch((e) => live && setLoadError(e.message))
+    return () => {
+      live = false
+    }
+  }, [branch])
 
   // stock changes from other cashiers or the admin show up right away
   useEffect(() => {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { peso } from '../lib/money'
 import { loadTodaySales, voidSale } from '../lib/pos'
-import { confirmDialog, alertDialog } from '../components/Confirm'
+import { confirmDialog, alertDialog } from '../lib/dialogs'
 
 // Today's walk-in sales at this branch. Void puts the cylinders back in stock.
 export default function TodaySales({ branch, onChange, onReprint }) {
@@ -19,12 +19,17 @@ export default function TodaySales({ branch, onChange, onReprint }) {
   }, [branch])
 
   useEffect(() => {
-    refresh()
+    let live = true
+    loadTodaySales(branch).then(
+      (list) => live && (setSales(list), setError('')),
+      (e) => live && setError(e.message),
+    )
     const channel = supabase
       .channel(`pos-orders-${branch}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `branch=eq.${branch}` }, refresh)
       .subscribe()
     return () => {
+      live = false
       supabase.removeChannel(channel)
     }
   }, [branch, refresh])

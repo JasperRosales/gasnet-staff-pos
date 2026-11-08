@@ -10,36 +10,46 @@ function status(p) {
   return { text: 'In stock', cls: 'bg-brand-light text-brand-pine' }
 }
 
+// stock per size plus how many were sold today
+async function inventoryRows(branch) {
+  const [products, sales] = await Promise.all([loadProducts(branch), loadTodaySales(branch)])
+  const sold = {}
+  for (const s of sales) {
+    if (s.voided) continue
+    for (const l of s.lines) sold[l.size] = (sold[l.size] || 0) + l.qty
+  }
+  return products.map((p) => ({ ...p, soldToday: sold[p.size] || 0 }))
+}
+
 // This branch's cylinder stock (read-only), updated live as sales and restocks happen
 export default function Inventory({ branch }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [updatedAt, setUpdatedAt] = useState(null)
 
-  const refresh = useCallback(async () => {
-    try {
-      const [products, sales] = await Promise.all([loadProducts(branch), loadTodaySales(branch)])
-      const sold = {}
-      for (const s of sales) {
-        if (s.voided) continue
-        for (const l of s.lines) sold[l.size] = (sold[l.size] || 0) + l.qty
-      }
-      setRows(products.map((p) => ({ ...p, soldToday: sold[p.size] || 0 })))
-      setUpdatedAt(new Date())
-      setError('')
-    } catch (e) {
-      setError(e.message)
-    }
-  }, [branch])
+  const show = useCallback((list) => {
+    setRows(list)
+    setUpdatedAt(new Date())
+    setError('')
+  }, [])
+  const refresh = useCallback(
+    () => inventoryRows(branch).then(show, (e) => setError(e.message)),
+    [branch, show],
+  )
 
   useEffect(() => {
-    refresh()
+    let live = true
+    inventoryRows(branch).then(
+      (list) => live && (setRows(list), setUpdatedAt(new Date()), setError('')),
+      (e) => live && setError(e.message),
+    )
     const channel = supabase
       .channel(`pos-inventory-${branch}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock', filter: `branch=eq.${branch}` }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `branch=eq.${branch}` }, refresh)
       .subscribe()
     return () => {
+      live = false
       supabase.removeChannel(channel)
     }
   }, [branch, refresh])
