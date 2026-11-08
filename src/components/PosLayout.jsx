@@ -7,8 +7,8 @@ const NAVBAR_IMAGE = '/navbarcolor.jpg'
 const TEAL_PART = '66%'
 
 const tabClass = (active) =>
-  `rounded-lg px-4 py-2 text-[15px] font-medium hover:opacity-100 ${
-    active ? 'bg-brand-red text-white' : 'bg-white/15 text-white hover:bg-white/25'
+  `whitespace-nowrap rounded-lg px-4 py-2 text-[15px] font-medium hover:opacity-100 max-[700px]:px-2.5 max-[700px]:text-[14px] ${
+    active ? 'bg-white text-brand-pine' : 'bg-transparent text-white/85 hover:bg-white/15 hover:text-white'
   }`
 
 // tabs = [{ key, label }]
@@ -25,7 +25,7 @@ export default function PosLayout({ branch, fullName, tabs, active, onSelect, ch
       >
         <div className="box-border flex items-center gap-3 px-5 max-[700px]:px-3" style={{ height: TEAL_PART }}>
           <img className="block h-[80%] w-auto max-[700px]:hidden" src="/cjg-logo-bar.png" alt="CJG" />
-          <nav className="flex gap-2">
+          <nav className="flex min-w-0 gap-1 overflow-x-auto">
             {tabs.map((t) => (
               <button key={t.key} className={tabClass(active === t.key)} onClick={() => onSelect(t.key)}>
                 {t.label}
@@ -35,9 +35,9 @@ export default function PosLayout({ branch, fullName, tabs, active, onSelect, ch
           <div className="ml-auto flex items-center gap-3 text-white">
             <div className="text-right leading-tight max-[700px]:hidden">
               <div className="text-[15px] font-semibold">{branchName(branch)} branch</div>
-              <div className="text-[13px] opacity-80">{fullName}</div>
+              <div className="text-[14px] opacity-80">{fullName}</div>
             </div>
-            <button className="bg-white/15 hover:bg-white/25" onClick={logout}>
+            <button className="whitespace-nowrap bg-white/15 hover:bg-white/25 max-[700px]:px-2.5" onClick={logout}>
               Log out
             </button>
           </div>

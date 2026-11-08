@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { peso } from '../lib/money'
 import { loadProducts, checkout } from '../lib/pos'
 import { confirmDialog, alertDialog } from '../lib/dialogs'
 import PosLayout from '../components/PosLayout'
-import Receipt from '../components/Receipt'
-import TodaySales from './TodaySales'
 import { getPrintMode, savePrintMode } from '../lib/printSettings'
-import Inventory from './Inventory'
+import { liveRefresher } from '../lib/lazyData'
+
+// downloaded only when first opened
+const Receipt = lazy(() => import('../components/Receipt'))
+const TodaySales = lazy(() => import('./TodaySales'))
+const Inventory = lazy(() => import('./Inventory'))
+const LOADING = <p className="text-gray-500">Loading...</p>
 
 const TABS = [
   { key: 'register', label: 'Register' },
@@ -27,10 +31,16 @@ const EMPTY_FORM = {
   remarks: '',
 }
 
-const CARD = 'rounded-2xl border border-(color:--border) bg-white'
-const LABEL = 'mb-1 block text-[13px] font-medium text-gray-600'
+const CARD = 'rounded-xl border border-(color:--border) bg-white'
+const LABEL = 'mb-1.5 block text-[14px] font-semibold text-gray-700'
+const STEP =
+  'grid size-9 min-h-0 place-items-center rounded-lg border border-(color:--border) bg-white p-0 text-lg text-brand-pine hover:bg-brand-light'
 const choice = (on) =>
-  `flex-1 rounded-lg px-3 py-2 text-[14px] ${on ? 'bg-brand-pine text-white' : 'border border-(color:--border) bg-white text-brand-pine'}`
+  `flex-1 rounded-lg border px-3 py-2 text-[15px] hover:opacity-100 ${
+    on
+      ? 'border-brand-pine bg-brand-light text-brand-pine ring-1 ring-brand-pine'
+      : 'border-(color:--border) bg-white font-medium text-gray-600 hover:border-gray-400'
+  }`
 
 function stockBadge(p) {
   if (p.stock <= 0) return { text: 'Out of stock', cls: 'bg-red-100 text-brand-red' }
@@ -74,15 +84,27 @@ export default function Pos({ branch, fullName }) {
   }, [branch])
 
   // stock changes from other cashiers or the admin show up right away
+  // (only while the Register is open: the other tabs load their own data)
+  const firstOpen = useRef(true)
   useEffect(() => {
+    if (tab !== 'register') return
+    // a burst of stock changes reloads once; nothing reloads while the tab is hidden
+    const live = liveRefresher(refresh)
+    if (firstOpen.current) firstOpen.current = false
+    else live.trigger() // back on the Register: catch up on what changed meanwhile
     const channel = supabase
       .channel(`pos-stock-${branch}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock', filter: `branch=eq.${branch}` }, refresh)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stock', filter: `branch=eq.${branch}` },
+        live.trigger,
+      )
       .subscribe()
     return () => {
+      live.stop()
       supabase.removeChannel(channel)
     }
-  }, [branch, refresh])
+  }, [branch, refresh, tab])
 
   const productOf = (size) => products.find((p) => p.size === size)
   const qtyInCart = (size) => cart.find((x) => x.size === size)?.qty ?? 0
@@ -149,198 +171,265 @@ export default function Pos({ branch, fullName }) {
 
   return (
     <PosLayout branch={branch} fullName={fullName} tabs={TABS} active={tab} onSelect={setTab}>
-      {tab === 'today' ? (
-        <TodaySales branch={branch} onChange={refresh} onReprint={(sale) => setReceipt({ ...sale, reprint: true })} />
-      ) : tab === 'inventory' ? (
-        <Inventory branch={branch} />
-      ) : (
-        <div className="grid grid-cols-[1fr_380px] gap-5 max-[900px]:grid-cols-1">
-          {/* Products */}
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="m-0 text-xl">LPG cylinders</h2>
-              <button className="border border-(color:--border) bg-white text-brand-pine" onClick={refresh}>
-                Refresh
-              </button>
-            </div>
-            {loadError && <p className="text-brand-red">Could not load products: {loadError}</p>}
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
-              {products.map((p) => {
-                const badge = stockBadge(p)
-                const inCart = qtyInCart(p.size)
-                const canAdd = inCart < p.stock
-                return (
-                  <button
-                    key={p.size}
-                    disabled={!canAdd}
-                    onClick={() => setQty(p.size, inCart + 1)}
-                    className={`${CARD} relative flex flex-col items-start gap-2 p-4 text-left text-(--text) hover:border-brand-pine`}
-                  >
-                    {inCart > 0 && (
-                      <span className="absolute top-3 right-3 grid size-7 place-items-center rounded-full bg-brand-red text-[13px] font-semibold text-white">
-                        {inCart}
-                      </span>
-                    )}
-                    <img src="/login-tanks.png" alt="" className="h-16 w-auto object-contain" />
-                    <span className="text-2xl font-semibold">{p.size}</span>
-                    <span className="text-[17px] text-brand-pine">{peso(p.price)}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[12px] font-medium ${badge.cls}`}>{badge.text}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-
-          {/* Cart and payment */}
-          <aside className={`${CARD} flex flex-col gap-4 self-start p-4`}>
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="m-0 text-xl">Current sale</h2>
-              <div className="flex items-center gap-1 text-[12px]" title="Auto prints the receipt right after each sale">
-                <span className="mr-1 text-gray-500">Receipt</span>
-                {['auto', 'manual'].map((m) => (
-                  <button
-                    key={m}
-                    className={`px-2.5 py-1 text-[12px] capitalize ${printMode === m ? 'bg-brand-pine text-white' : 'border border-(color:--border) bg-white text-brand-pine'}`}
-                    onClick={() => changePrintMode(m)}
-                  >
-                    {m}
-                  </button>
-                ))}
+      <Suspense fallback={LOADING}>
+        {tab === 'today' ? (
+          <TodaySales branch={branch} onChange={refresh} onReprint={(sale) => setReceipt({ ...sale, reprint: true })} />
+        ) : tab === 'inventory' ? (
+          <Inventory branch={branch} />
+        ) : (
+          <div className="grid grid-cols-[1fr_380px] gap-5 max-[900px]:grid-cols-1">
+            {/* Products */}
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="m-0 text-xl">LPG cylinders</h2>
+                <button className="border border-(color:--border) bg-white text-brand-pine" onClick={refresh}>
+                  Refresh
+                </button>
               </div>
-            </div>
-
-            {lines.length === 0 ? (
-              <p className="m-0 text-[14px] text-gray-500">Tap a cylinder to add it.</p>
-            ) : (
-              <ul className="m-0 flex list-none flex-col gap-2 p-0">
-                {lines.map((l) => (
-                  <li key={l.size} className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <div className="font-semibold">{l.size}</div>
-                      <div className="text-[13px] text-gray-500">{peso(l.price)} each</div>
-                    </div>
-                    <button className="px-3 py-1" onClick={() => setQty(l.size, l.qty - 1)} aria-label="Less">
-                      −
-                    </button>
-                    <span className="w-6 text-center">{l.qty}</span>
+              {loadError && <p className="text-brand-red">Could not load products: {loadError}</p>}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
+                {products.map((p) => {
+                  const badge = stockBadge(p)
+                  const inCart = qtyInCart(p.size)
+                  const canAdd = inCart < p.stock
+                  return (
                     <button
-                      className="px-3 py-1"
-                      onClick={() => setQty(l.size, l.qty + 1)}
-                      disabled={l.qty >= (productOf(l.size)?.stock ?? 0)}
-                      aria-label="More"
+                      key={p.size}
+                      disabled={!canAdd}
+                      onClick={() => setQty(p.size, inCart + 1)}
+                      className={`relative flex flex-col items-start gap-1.5 rounded-xl border bg-white p-4 text-left font-normal text-(--text) hover:border-brand-pine hover:opacity-100 ${
+                        inCart > 0
+                          ? 'border-brand-pine bg-brand-light/40 ring-1 ring-brand-pine'
+                          : 'border-(color:--border)'
+                      }`}
                     >
-                      +
+                      {inCart > 0 && (
+                        <span className="absolute top-3 right-3 grid size-7 place-items-center rounded-full bg-brand-pine text-[14px] font-bold text-white">
+                          {inCart}
+                        </span>
+                      )}
+                      <img src="/login-tanks.png" alt="" className="mb-1 h-14 w-auto object-contain" />
+                      <span className="text-[26px] leading-none font-bold">{p.size}</span>
+                      <span className="text-[17px] font-semibold text-gray-700 tabular-nums">{peso(p.price)}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[13px] font-medium ${badge.cls}`}>
+                        {badge.text}
+                      </span>
                     </button>
-                    <span className="w-24 text-right">{peso(l.price * l.qty)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <div>
-              <span className={LABEL}>Customer</span>
-              <div className="flex gap-2">
-                <button className={choice(form.customerType === '')} onClick={() => setForm({ ...form, customerType: '' })}>
-                  Walk-in
-                </button>
-                <button
-                  className={choice(form.customerType === 'commercial')}
-                  onClick={() => setForm({ ...form, customerType: 'commercial' })}
-                >
-                  Commercial
-                </button>
+                  )
+                })}
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input placeholder="Name (optional)" value={form.customerName} onChange={setField('customerName')} />
-              <input
-                placeholder="Contact (11 digits)"
-                inputMode="numeric"
-                value={form.contact}
-                onChange={(e) => setForm({ ...form, contact: e.target.value.replace(/\D/g, '').slice(0, 11) })}
-              />
-            </div>
-            <label className="flex items-center gap-2 text-[14px]">
-              <input type="checkbox" checked={form.delivery} onChange={setField('delivery')} />
-              For delivery
-            </label>
-            {form.delivery && <input placeholder="Delivery address" value={form.address} onChange={setField('address')} />}
+            </section>
 
-            <div>
-              <span className={LABEL}>Payment</span>
-              <div className="flex gap-2">
-                <button className={choice(form.payment === 'cash')} onClick={() => setForm({ ...form, payment: 'cash' })}>
-                  Cash
-                </button>
-                <button
-                  className={choice(form.payment === 'gcash')}
-                  onClick={() => setForm({ ...form, payment: 'gcash', cash: '' })}
-                >
-                  GCash
-                </button>
+            {/* Cart and payment */}
+            <aside className={`${CARD} flex flex-col gap-4 self-start p-5`}>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="m-0 text-xl">Current sale</h2>
+                <div className="flex items-center gap-2" title="Auto prints the receipt right after each sale">
+                  <span className="text-[14px] text-gray-500">Receipt</span>
+                  <div className="flex rounded-lg border border-(color:--border) bg-gray-50 p-0.5">
+                    {['auto', 'manual'].map((m) => (
+                      <button
+                        key={m}
+                        aria-pressed={printMode === m}
+                        className={`min-h-0 rounded-md px-3 py-1 text-[14px] capitalize ${
+                          printMode === m
+                            ? 'bg-white text-brand-pine shadow-sm'
+                            : 'bg-transparent font-medium text-gray-500'
+                        }`}
+                        onClick={() => changePrintMode(m)}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <label>
-                <span className={LABEL}>Discount (₱)</span>
-                <input className="w-full box-border" inputMode="decimal" value={form.discount} onChange={setField('discount')} />
-              </label>
-              {form.payment === 'cash' && (
+
+              {lines.length === 0 ? (
+                <p className="m-0 rounded-lg border border-dashed border-(color:--border) p-4 text-center text-[15px] text-gray-500">
+                  Tap a cylinder to add it to the sale.
+                </p>
+              ) : (
+                <ul className="m-0 flex list-none flex-col divide-y divide-(--border) p-0">
+                  {lines.map((l) => (
+                    <li key={l.size} className="flex items-center gap-2 py-2">
+                      <div className="flex-1">
+                        <div className="font-semibold">{l.size}</div>
+                        <div className="text-[14px] whitespace-nowrap text-gray-500">{peso(l.price)} each</div>
+                      </div>
+                      <button
+                        className={STEP}
+                        onClick={() => setQty(l.size, l.qty - 1)}
+                        aria-label={`One less ${l.size}`}
+                      >
+                        −
+                      </button>
+                      <span className="w-7 text-center text-[17px] font-semibold tabular-nums">{l.qty}</span>
+                      <button
+                        className={STEP}
+                        onClick={() => setQty(l.size, l.qty + 1)}
+                        disabled={l.qty >= (productOf(l.size)?.stock ?? 0)}
+                        aria-label={`One more ${l.size}`}
+                      >
+                        +
+                      </button>
+                      <span className="w-28 text-right font-semibold tabular-nums">{peso(l.price * l.qty)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div>
+                <span className={LABEL}>Customer</span>
+                <div className="flex gap-2">
+                  <button
+                    className={choice(form.customerType === '')}
+                    onClick={() => setForm({ ...form, customerType: '' })}
+                  >
+                    Walk-in
+                  </button>
+                  <button
+                    className={choice(form.customerType === 'commercial')}
+                    onClick={() => setForm({ ...form, customerType: 'commercial' })}
+                  >
+                    Commercial
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <label>
-                  <span className={LABEL}>Cash received (₱)</span>
-                  <input className="w-full box-border" inputMode="decimal" value={form.cash} onChange={setField('cash')} />
+                  <span className={LABEL}>Name</span>
+                  <input
+                    className="w-full"
+                    placeholder="Optional"
+                    value={form.customerName}
+                    onChange={setField('customerName')}
+                  />
+                </label>
+                <label>
+                  <span className={LABEL}>Contact</span>
+                  <input
+                    className="w-full"
+                    placeholder="09XXXXXXXXX"
+                    inputMode="numeric"
+                    value={form.contact}
+                    onChange={(e) => setForm({ ...form, contact: e.target.value.replace(/\D/g, '').slice(0, 11) })}
+                  />
+                </label>
+              </div>
+              <label className="flex items-center gap-2.5 text-[15px]">
+                <input type="checkbox" checked={form.delivery} onChange={setField('delivery')} />
+                For delivery
+              </label>
+              {form.delivery && (
+                <label>
+                  <span className={LABEL}>Delivery address</span>
+                  <input className="w-full" value={form.address} onChange={setField('address')} />
                 </label>
               )}
-            </div>
-            <input placeholder="Expenses (optional), e.g. gas 70 food 50" value={form.remarks} onChange={setField('remarks')} />
 
-            <div className="border-t border-(color:--border) pt-3 text-[15px]">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{peso(subtotal)}</span>
-              </div>
-              {discount > 0 && (
-                <div className="flex justify-between">
-                  <span>Discount</span>
-                  <span>−{peso(discount)}</span>
+              <div>
+                <span className={LABEL}>Payment</span>
+                <div className="flex gap-2">
+                  <button
+                    className={choice(form.payment === 'cash')}
+                    onClick={() => setForm({ ...form, payment: 'cash' })}
+                  >
+                    Cash
+                  </button>
+                  <button
+                    className={choice(form.payment === 'gcash')}
+                    onClick={() => setForm({ ...form, payment: 'gcash', cash: '' })}
+                  >
+                    GCash
+                  </button>
                 </div>
-              )}
-              <div className="flex justify-between text-xl font-semibold">
-                <span>Total</span>
-                <span>{peso(total)}</span>
               </div>
-              {form.payment === 'cash' && form.cash !== '' && (
-                <div className={`flex justify-between ${cashShort ? 'text-brand-red' : 'text-brand-pine'}`}>
-                  <span>{cashShort ? 'Short' : 'Change'}</span>
-                  <span>{peso(Math.abs(cash - total))}</span>
-                </div>
-              )}
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label>
+                  <span className={LABEL}>Discount (₱)</span>
+                  <input
+                    className="w-full box-border"
+                    inputMode="decimal"
+                    value={form.discount}
+                    onChange={setField('discount')}
+                  />
+                </label>
+                {form.payment === 'cash' && (
+                  <label>
+                    <span className={LABEL}>Cash received (₱)</span>
+                    <input className="w-full" inputMode="decimal" value={form.cash} onChange={setField('cash')} />
+                  </label>
+                )}
+              </div>
+              <label>
+                <span className={LABEL}>Expenses</span>
+                <input
+                  className="w-full"
+                  placeholder="Optional, e.g. gas 70 food 50"
+                  value={form.remarks}
+                  onChange={setField('remarks')}
+                />
+              </label>
 
-            <div className="flex gap-2">
-              <button
-                className="border border-(color:--border) bg-white text-brand-pine"
-                onClick={clearSale}
-                disabled={saving || (cart.length === 0 && form === EMPTY_FORM)}
-              >
-                Clear
-              </button>
-              <button className="flex-1 bg-brand-pine py-3 text-[16px]" onClick={submit} disabled={saving || cart.length === 0}>
-                {saving ? 'Saving…' : `Charge ${peso(total)}`}
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
+              <div className="flex flex-col gap-1 border-t border-(color:--border) pt-4 text-[15px] tabular-nums">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal</span>
+                  <span>{peso(subtotal)}</span>
+                </div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Discount</span>
+                    <span>−{peso(discount)}</span>
+                  </div>
+                )}
+                <div className="mt-1 flex items-baseline justify-between">
+                  <span className="text-[17px] font-semibold">Total</span>
+                  <span className="text-[30px] leading-tight font-bold">{peso(total)}</span>
+                </div>
+                {form.payment === 'cash' && form.cash !== '' && (
+                  <div
+                    className={`flex justify-between rounded-lg px-3 py-2 text-[17px] font-semibold ${
+                      cashShort ? 'bg-red-50 text-brand-red' : 'bg-brand-light text-brand-pine'
+                    }`}
+                  >
+                    <span>{cashShort ? 'Short' : 'Change'}</span>
+                    <span>{peso(Math.abs(cash - total))}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  className="border border-(color:--border) bg-white px-5 text-gray-700"
+                  onClick={clearSale}
+                  disabled={saving || (cart.length === 0 && form === EMPTY_FORM)}
+                >
+                  Clear
+                </button>
+                <button
+                  className="min-h-[52px] flex-1 bg-brand-pine text-[17px]"
+                  onClick={submit}
+                  disabled={saving || cart.length === 0}
+                >
+                  {saving ? 'Saving…' : `Charge ${peso(total)}`}
+                </button>
+              </div>
+            </aside>
+          </div>
+        )}
+      </Suspense>
 
       {receipt && (
-        <Receipt
-          sale={receipt}
-          branch={branch}
-          cashier={fullName}
-          autoPrint={Boolean(receipt.autoPrint)}
-          onClose={closeReceipt}
-        />
+        <Suspense fallback={null}>
+          <Receipt
+            sale={receipt}
+            branch={branch}
+            cashier={fullName}
+            autoPrint={Boolean(receipt.autoPrint)}
+            onClose={closeReceipt}
+          />
+        </Suspense>
       )}
     </PosLayout>
   )

@@ -1,32 +1,54 @@
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
 
 @theme static {
   --color-brand: #166534;
   --color-brand-dark: #14532d;
   --color-brand-soft: #2f7d4f;
-  --color-brand-light: #dcecdf;
+  --color-brand-light: #e3f1ea;
   --color-brand-pine: #005746;
-  --color-brand-pine-light: #087665;
+  --color-brand-pine-light: #0a6b57;
   --color-brand-teal: #044a3e;
   --color-brand-mint: #70e6dc;
   --color-brand-red: #a80202;
+
+  /* greys with a faint green cast, so text and lines sit with the brand instead of against it */
+  --color-gray-50: #f6f8f7;
+  --color-gray-100: #eef2f0;
+  --color-gray-200: #dde5e0;
+  --color-gray-300: #c6d1cb;
+  --color-gray-400: #8f9d96;
+  --color-gray-500: #5d6b64;
+  --color-gray-600: #4a5751;
+  --color-gray-700: #36423c;
+  --color-gray-800: #24302a;
+  --color-gray-900: #17221d;
+
+  --font-sans: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
 }
+
 /* Base styles: Tailwind classes can override these */
 @layer base {
   :root {
-    --bg: #eef5ef;           /* page background */
-    --text: #14261b;         /* main text */
-    --primary: #166534;      /* buttons */
-    --primary-text: #ffffff; /* text on buttons */
-    --border: #bcd5c2;       /* lines and input borders */
-    --card: #ffffff;         /* table background */
-    --table-head: #dcecdf;   /* table header */
-    --font: 'Poppins', system-ui, sans-serif;
+    --bg: #f3f6f4;           /* page: a soft tint, easier on the eyes than pure white */
+    --surface: #ffffff;      /* panels, tables, cards */
+    --text: #17221d;         /* main text (not pure black, less glare) */
+    --muted: #5d6b64;        /* secondary text, 5.6:1 on white */
+    --primary: #005746;      /* main buttons */
+    --primary-hover: #0a6b57;
+    --primary-text: #ffffff;
+    --border: #d6e0da;       /* lines and input borders */
+    --card: #ffffff;
+    --table-head: #eef3f0;
+    --focus: #0a8f73;        /* keyboard focus ring */
+    --font: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
 
     color-scheme: light;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   body {
@@ -44,40 +66,68 @@
 
   h1, h2, h3 {
     color: var(--text);
-    font-weight: 600;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
   }
+
+  /* money and counts line up in columns */
+  td, th, input, .tabular-nums { font-variant-numeric: tabular-nums; }
 
   button {
     background: var(--primary);
     color: var(--primary-text);
     border: none;
-    border-radius: 6px;
-    padding: 8px 14px;
+    border-radius: 8px;
+    padding: 9px 16px;
+    min-height: 40px;
     font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease,
-      transform 0.1s ease, box-shadow 0.2s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease,
+      transform 0.1s ease, box-shadow 0.15s ease;
   }
-  button:hover { opacity: 0.9; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button:active:not(:disabled) { transform: scale(0.95); }
+  button:hover { opacity: 0.92; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:active:not(:disabled) { transform: scale(0.97); }
 
-  input, select {
-    padding: 8px;
+  input, select, textarea {
+    padding: 9px 12px;
+    min-height: 40px;
+    box-sizing: border-box;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     background: #ffffff;
     color: var(--text);
     font-family: inherit;
+    font-size: 15px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
+  input::placeholder, textarea::placeholder { color: #8f9d96; }
+  input:hover, select:hover, textarea:hover { border-color: #b6c4bc; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px rgb(10 143 115 / 0.18); }
+  input[type='checkbox'], input[type='radio'] { min-height: 0; width: 18px; height: 18px; accent-color: var(--primary); }
+
+  /* a clear ring for keyboard users only (mouse clicks stay clean) */
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
 
   table {
     border-collapse: collapse;
     background: var(--card);
     border: 1px solid var(--border);
   }
-  th { background: var(--table-head); }
+  th {
+    background: var(--table-head);
+    color: #36423c;
+    font-weight: 600;
+  }
   th, td { border-bottom: 1px solid var(--border); }
+  tbody tr:hover td { background: #f6f9f7; }
+
+  ::selection { background: #c9eee3; }
 
   /* Respect people who turn animations off in their device settings */
   @media (prefers-reduced-motion: reduce) {

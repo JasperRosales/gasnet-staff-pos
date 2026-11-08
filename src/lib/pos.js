@@ -1,4 +1,8 @@
 import { supabase } from './supabaseClient'
+import { cachedQuery } from './lazyData'
+
+// prices and sizes change rarely: kept for 5 minutes (stock is always read fresh)
+const PRICES_TTL = 5 * 60 * 1000
 
 export const ITEM_PREFIX = 'LPG Cylinder '
 // "LPG Cylinder 11kg" -> "11kg"
@@ -7,8 +11,12 @@ export const sizeOf = (itemName) => (itemName || '').replace(ITEM_PREFIX, '')
 // Sizes with this branch's price and stock: [{ size, price, stock, low }]
 export async function loadProducts(branch) {
   const [sizes, branchPrices, stock] = await Promise.all([
-    supabase.from('lpg_prices').select('size, price, low_stock_level').order('sort_order'),
-    supabase.from('branch_prices').select('size, price').eq('branch', branch),
+    cachedQuery('prices:lpg', PRICES_TTL, () =>
+      supabase.from('lpg_prices').select('size, price, low_stock_level').order('sort_order'),
+    ),
+    cachedQuery(`prices:branch:${branch}`, PRICES_TTL, () =>
+      supabase.from('branch_prices').select('size, price').eq('branch', branch),
+    ),
     supabase.from('stock').select('item_name, quantity').eq('branch', branch),
   ])
   const error = sizes.error || branchPrices.error || stock.error

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { liveRefresher } from '../lib/lazyData'
 import { peso } from '../lib/money'
 import { loadTodaySales, voidSale } from '../lib/pos'
 import { confirmDialog, alertDialog } from '../lib/dialogs'
@@ -24,12 +25,19 @@ export default function TodaySales({ branch, onChange, onReprint }) {
       (list) => live && (setSales(list), setError('')),
       (e) => live && setError(e.message),
     )
+    // a burst of changes (one sale = several rows) reloads once; nothing while the tab is hidden
+    const liveUpdates = liveRefresher(refresh)
     const channel = supabase
       .channel(`pos-orders-${branch}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `branch=eq.${branch}` }, refresh)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders', filter: `branch=eq.${branch}` },
+        liveUpdates.trigger,
+      )
       .subscribe()
     return () => {
       live = false
+      liveUpdates.stop()
       supabase.removeChannel(channel)
     }
   }, [branch, refresh])
@@ -66,9 +74,9 @@ export default function TodaySales({ branch, onChange, onReprint }) {
       <h2 className="mt-0 text-xl">Today's sales</h2>
       <div className="mb-5 grid grid-cols-5 gap-3 max-[900px]:grid-cols-2">
         {tiles.map((t) => (
-          <div key={t.label} className="rounded-2xl border border-(color:--border) bg-white p-4">
-            <div className="text-[13px] text-gray-500">{t.label}</div>
-            <div className="text-xl font-semibold text-brand-pine">{t.value}</div>
+          <div key={t.label} className="rounded-xl border border-(color:--border) bg-white p-4">
+            <div className="text-[14px] text-gray-500">{t.label}</div>
+            <div className="text-2xl font-bold text-gray-900 tabular-nums">{t.value}</div>
           </div>
         ))}
       </div>
@@ -77,37 +85,39 @@ export default function TodaySales({ branch, onChange, onReprint }) {
         <p className="text-gray-500">No sales yet today.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
+          <table className="w-full text-[15px]">
             <thead>
               <tr>
-                <th className="p-2 text-left">Time</th>
-                <th className="p-2 text-left">Items</th>
-                <th className="p-2 text-left">Customer</th>
-                <th className="p-2 text-left">Paid</th>
-                <th className="p-2 text-right">Total</th>
-                <th className="p-2" />
+                <th className="px-3 py-2.5 text-left">Time</th>
+                <th className="px-3 py-2.5 text-left">Items</th>
+                <th className="px-3 py-2.5 text-left">Customer</th>
+                <th className="px-3 py-2.5 text-left">Paid</th>
+                <th className="px-3 py-2.5 text-right">Total</th>
+                <th className="px-3 py-2.5" />
               </tr>
             </thead>
             <tbody>
               {sales.map((s) => (
                 <tr key={s.groupId ?? s.time} className={s.voided ? 'text-gray-400 line-through' : ''}>
-                  <td className="p-2">{new Date(s.time).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}</td>
-                  <td className="p-2">{s.lines.map((l) => `${l.size} × ${l.qty}`).join(', ')}</td>
-                  <td className="p-2">
+                  <td className="px-3 py-2.5">
+                    {new Date(s.time).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}
+                  </td>
+                  <td className="px-3 py-2.5">{s.lines.map((l) => `${l.size} × ${l.qty}`).join(', ')}</td>
+                  <td className="px-3 py-2.5">
                     {s.customer}
                     {s.customerType === 'commercial' && ' (commercial)'}
                     {s.delivery && ' · delivery'}
                   </td>
-                  <td className="p-2">{s.gcash ? 'GCash' : 'Cash'}</td>
-                  <td className="p-2 text-right">{peso(s.total)}</td>
-                  <td className="p-2 text-right">
+                  <td className="px-3 py-2.5">{s.gcash ? 'GCash' : 'Cash'}</td>
+                  <td className="px-3 py-2.5 text-right">{peso(s.total)}</td>
+                  <td className="px-3 py-2.5 text-right">
                     {s.voided ? (
                       <span className="no-underline">Voided</span>
                     ) : (
                       s.groupId && (
                         <div className="flex justify-end gap-2">
                           <button
-                            className="border border-(color:--border) bg-white px-3 py-1 text-[13px] text-brand-pine"
+                            className="min-h-9 border border-(color:--border) bg-white px-3 py-1 text-[14px] text-brand-pine hover:bg-brand-light"
                             onClick={() =>
                               onReprint({
                                 groupId: s.groupId,
@@ -125,7 +135,10 @@ export default function TodaySales({ branch, onChange, onReprint }) {
                           >
                             Reprint
                           </button>
-                          <button className="bg-brand-red px-3 py-1 text-[13px]" onClick={() => doVoid(s)}>
+                          <button
+                            className="min-h-9 border border-red-200 bg-white px-3 py-1 text-[14px] text-brand-red hover:bg-red-50"
+                            onClick={() => doVoid(s)}
+                          >
                             Void
                           </button>
                         </div>

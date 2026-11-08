@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 import { confirmDialog } from './lib/dialogs'
-import Login from './pages/Login'
-import Pos from './pages/Pos'
+
+// each screen's code downloads only when it is first shown
+const Login = lazy(() => import('./pages/Login'))
+const Pos = lazy(() => import('./pages/Pos'))
+const LOADING = <p>Loading...</p>
 
 function StatusScreen({ title, text }) {
   return (
@@ -51,7 +54,13 @@ export default function App() {
   const profile = loaded.userId === userId ? loaded.profile : undefined
 
   if (session === undefined) return <p>Loading...</p>
-  if (!session || checkingLogin) return <Login onCheckingChange={setCheckingLogin} />
+  if (!session || checkingLogin) {
+    return (
+      <Suspense fallback={LOADING}>
+        <Login onCheckingChange={setCheckingLogin} />
+      </Suspense>
+    )
+  }
   if (profile === undefined) return <p>Loading...</p>
 
   if (!profile) return <StatusScreen title="Profile not found" text="Please log out and try again." />
@@ -68,5 +77,9 @@ export default function App() {
   }
   if (!profile.branch) return <StatusScreen title="No branch assigned" text="Please contact the admin." />
 
-  return <Pos branch={profile.branch} fullName={profile.full_name} />
+  return (
+    <Suspense fallback={LOADING}>
+      <Pos branch={profile.branch} fullName={profile.full_name} />
+    </Suspense>
+  )
 }

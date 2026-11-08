@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { liveRefresher } from '../lib/lazyData'
 import { peso } from '../lib/money'
 import { branchName } from '../lib/branches'
 import { loadProducts, loadTodaySales } from '../lib/pos'
@@ -32,10 +33,7 @@ export default function Inventory({ branch }) {
     setUpdatedAt(new Date())
     setError('')
   }, [])
-  const refresh = useCallback(
-    () => inventoryRows(branch).then(show, (e) => setError(e.message)),
-    [branch, show],
-  )
+  const refresh = useCallback(() => inventoryRows(branch).then(show, (e) => setError(e.message)), [branch, show])
 
   useEffect(() => {
     let live = true
@@ -43,13 +41,24 @@ export default function Inventory({ branch }) {
       (list) => live && (setRows(list), setUpdatedAt(new Date()), setError('')),
       (e) => live && setError(e.message),
     )
+    // a burst of changes (one sale = several rows) reloads once; nothing while the tab is hidden
+    const liveUpdates = liveRefresher(refresh)
     const channel = supabase
       .channel(`pos-inventory-${branch}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock', filter: `branch=eq.${branch}` }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `branch=eq.${branch}` }, refresh)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stock', filter: `branch=eq.${branch}` },
+        liveUpdates.trigger,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders', filter: `branch=eq.${branch}` },
+        liveUpdates.trigger,
+      )
       .subscribe()
     return () => {
       live = false
+      liveUpdates.stop()
       supabase.removeChannel(channel)
     }
   }, [branch, refresh])
@@ -73,35 +82,40 @@ export default function Inventory({ branch }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="m-0 text-xl">Inventory · {branchName(branch)} branch</h2>
-          <p className="m-0 text-[13px] text-gray-500">
+          <p className="m-0 text-[14px] text-gray-500">
             Updates live · last checked {updatedAt?.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}
           </p>
         </div>
-        <button className="border border-(color:--border) bg-white text-brand-pine" onClick={refresh}>
+        <button
+          className="border border-(color:--border) bg-white text-brand-pine hover:bg-brand-light"
+          onClick={refresh}
+        >
           Refresh
         </button>
       </div>
 
       <div className="mb-5 grid grid-cols-4 gap-3 max-[900px]:grid-cols-2">
         {tiles.map((t) => (
-          <div key={t.label} className="rounded-2xl border border-(color:--border) bg-white p-4">
-            <div className="text-[13px] text-gray-500">{t.label}</div>
-            <div className={`text-xl font-semibold ${t.warn ? 'text-brand-red' : 'text-brand-pine'}`}>{t.value}</div>
+          <div key={t.label} className="rounded-xl border border-(color:--border) bg-white p-4">
+            <div className="text-[14px] text-gray-500">{t.label}</div>
+            <div className={`text-2xl font-bold tabular-nums ${t.warn ? 'text-brand-red' : 'text-gray-900'}`}>
+              {t.value}
+            </div>
           </div>
         ))}
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[14px]">
+        <table className="w-full text-[15px]">
           <thead>
             <tr>
-              <th className="p-2 text-left">Size</th>
-              <th className="p-2 text-right">Price</th>
-              <th className="p-2 text-right">On hand</th>
-              <th className="p-2 text-right">Sold today</th>
-              <th className="p-2 text-right">Low-stock level</th>
-              <th className="p-2 text-right">Value</th>
-              <th className="p-2 text-left">Status</th>
+              <th className="px-3 py-2.5 text-left">Size</th>
+              <th className="px-3 py-2.5 text-right">Price</th>
+              <th className="px-3 py-2.5 text-right">On hand</th>
+              <th className="px-3 py-2.5 text-right">Sold today</th>
+              <th className="px-3 py-2.5 text-right">Low-stock level</th>
+              <th className="px-3 py-2.5 text-right">Value</th>
+              <th className="px-3 py-2.5 text-left">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -109,14 +123,14 @@ export default function Inventory({ branch }) {
               const s = status(r)
               return (
                 <tr key={r.size}>
-                  <td className="p-2 font-semibold">{r.size}</td>
-                  <td className="p-2 text-right">{peso(r.price)}</td>
-                  <td className="p-2 text-right text-[16px] font-semibold">{r.stock}</td>
-                  <td className="p-2 text-right">{r.soldToday}</td>
-                  <td className="p-2 text-right">{r.low}</td>
-                  <td className="p-2 text-right">{peso(r.stock * r.price)}</td>
-                  <td className="p-2">
-                    <span className={`rounded-full px-2 py-0.5 text-[12px] font-medium ${s.cls}`}>{s.text}</span>
+                  <td className="px-3 py-2.5 font-semibold">{r.size}</td>
+                  <td className="px-3 py-2.5 text-right">{peso(r.price)}</td>
+                  <td className="px-3 py-2.5 text-right text-[16px] font-semibold">{r.stock}</td>
+                  <td className="px-3 py-2.5 text-right">{r.soldToday}</td>
+                  <td className="px-3 py-2.5 text-right">{r.low}</td>
+                  <td className="px-3 py-2.5 text-right">{peso(r.stock * r.price)}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={`rounded-full px-2 py-0.5 text-[13px] font-medium ${s.cls}`}>{s.text}</span>
                   </td>
                 </tr>
               )
@@ -124,7 +138,9 @@ export default function Inventory({ branch }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-[13px] text-gray-500">Stock goes down with each sale and back up when a sale is voided.</p>
+      <p className="mt-3 text-[14px] text-gray-500">
+        Stock goes down with each sale and back up when a sale is voided.
+      </p>
     </div>
   )
 }
