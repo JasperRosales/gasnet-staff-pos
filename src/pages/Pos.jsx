@@ -263,7 +263,7 @@ export default function Pos({ branch, fullName }) {
                 </label>
               )}
             </div>
-            <input placeholder="Remarks (optional)" value={form.remarks} onChange={setField('remarks')} />
+            <input placeholder="Expenses (optional), e.g. gas 70 food 50" value={form.remarks} onChange={setField('remarks')} />
 
             <div className="border-t border-(color:--border) pt-3 text-[15px]">
               <div className="flex justify-between">
