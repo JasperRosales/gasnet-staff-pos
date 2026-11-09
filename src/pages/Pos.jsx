@@ -5,7 +5,7 @@ import { loadProducts, checkout } from '../lib/pos'
 import { confirmDialog, alertDialog } from '../lib/dialogs'
 import PosLayout from '../components/PosLayout'
 import { getPrintMode, savePrintMode } from '../lib/printSettings'
-import { liveRefresher } from '../lib/lazyData'
+import { invalidate, liveRefresher } from '../lib/lazyData'
 
 // downloaded only when first opened
 const Receipt = lazy(() => import('../components/Receipt'))
@@ -83,13 +83,17 @@ export default function Pos({ branch, fullName }) {
     }
   }, [branch])
 
-  // stock changes from other cashiers or the admin show up right away
-  // (only while the Register is open: the other tabs load their own data)
+  // stock changes from other cashiers or the admin, and price updates by the admin, show up
+  // right away (only while the Register is open: the other tabs load their own data)
   const firstOpen = useRef(true)
   useEffect(() => {
     if (tab !== 'register') return
-    // a burst of stock changes reloads once; nothing reloads while the tab is hidden
-    const live = liveRefresher(refresh)
+    // a burst of changes reloads once; nothing reloads while the tab is hidden.
+    // Prices are cached for 5 minutes, so the cache is dropped first.
+    const live = liveRefresher(() => {
+      invalidate('prices:')
+      refresh()
+    })
     if (firstOpen.current) firstOpen.current = false
     else live.trigger() // back on the Register: catch up on what changed meanwhile
     const channel = supabase
@@ -97,6 +101,12 @@ export default function Pos({ branch, fullName }) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'stock', filter: `branch=eq.${branch}` },
+        live.trigger,
+      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lpg_prices' }, live.trigger)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'branch_prices', filter: `branch=eq.${branch}` },
         live.trigger,
       )
       .subscribe()

@@ -60,7 +60,7 @@ export async function loadTodaySales(branch) {
     .select('id, group_id, item_name, quantity, unit_price, discount, total_price, status, accepted_at, customer_name, customer_address, customer_type, paid_gcash, delivery_status, remarks')
     .eq('branch', branch)
     .eq('source', 'walkin')
-    .in('status', ['accepted', 'rejected'])
+    .in('status', ['accepted', 'cancelled']) // cancelled = voided
     .gte('accepted_at', start.toISOString())
     .order('accepted_at', { ascending: false })
     .order('id')
@@ -77,8 +77,9 @@ export async function loadTodaySales(branch) {
         address: o.customer_address,
         customerType: o.customer_type,
         gcash: o.paid_gcash,
-        delivery: Boolean(o.delivery_status),
-        voided: o.status === 'rejected',
+        // a counter sale is 'delivered' right away with no address; a delivery has an address
+        delivery: o.delivery_status !== 'delivered' || Boolean(o.customer_address),
+        voided: o.status === 'cancelled',
         remarks: o.remarks,
         lines: [],
         discount: 0,
