@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { peso } from '../lib/money'
 import { loadProducts, checkout } from '../lib/pos'
+import { checkSale, filterMoney, LIMITS } from '../lib/saleRules'
 import { confirmDialog, alertDialog } from '../lib/dialogs'
 import PosLayout from '../components/PosLayout'
 import { getPrintMode, savePrintMode } from '../lib/printSettings'
@@ -136,10 +137,12 @@ export default function Pos({ branch, fullName }) {
 
   const lines = cart.map((x) => ({ ...x, price: productOf(x.size)?.price ?? 0 }))
   const subtotal = lines.reduce((s, l) => s + l.price * l.qty, 0)
-  const discount = Math.min(Math.max(Number(form.discount) || 0, 0), subtotal)
-  const total = subtotal - discount
-  const cash = Number(form.cash) || 0
+  // the input rules (saleRules.js, the same as pos_checkout in the database)
+  const { errors, discount, cash, total } = checkSale(form, subtotal)
   const cashShort = form.payment === 'cash' && form.cash !== '' && cash < total
+  const firstError = Object.values(errors)[0]
+  // a red message under a field
+  const fieldError = (key) => errors[key] && <span className="mt-1 block text-[13px] text-brand-red">{errors[key]}</span>
 
   const clearSale = () => {
     setCart([])
@@ -148,9 +151,7 @@ export default function Pos({ branch, fullName }) {
 
   const submit = async () => {
     if (cart.length === 0) return
-    if (form.delivery && !form.address.trim()) return alertDialog('Please enter the delivery address.')
-    if (form.contact && !/^\d{11}$/.test(form.contact)) return alertDialog('Contact number must be exactly 11 digits.')
-    if (cashShort) return alertDialog(`Cash is short by ${peso(total - cash)}.`)
+    if (firstError) return alertDialog(firstError, 'Please check the sale')
     if (!(await confirmDialog(`Charge ${peso(total)} for ${cart.map((x) => `${x.size} × ${x.qty}`).join(', ')}?`)))
       return
 
@@ -312,9 +313,11 @@ export default function Pos({ branch, fullName }) {
                   <input
                     className="w-full"
                     placeholder="Optional"
+                    maxLength={LIMITS.name}
                     value={form.customerName}
                     onChange={setField('customerName')}
                   />
+                  {fieldError('customerName')}
                 </label>
                 <label>
                   <span className={LABEL}>Contact</span>
@@ -325,6 +328,7 @@ export default function Pos({ branch, fullName }) {
                     value={form.contact}
                     onChange={(e) => setForm({ ...form, contact: e.target.value.replace(/\D/g, '').slice(0, 11) })}
                   />
+                  {form.contact.length > 0 && form.contact.length < 11 && fieldError('contact')}
                 </label>
               </div>
               <label className="flex items-center gap-2.5 text-[15px]">
@@ -334,7 +338,8 @@ export default function Pos({ branch, fullName }) {
               {form.delivery && (
                 <label>
                   <span className={LABEL}>Delivery address</span>
-                  <input className="w-full" value={form.address} onChange={setField('address')} />
+                  <input className="w-full" maxLength={LIMITS.address} value={form.address} onChange={setField('address')} />
+                  {fieldError('address')}
                 </label>
               )}
 
@@ -362,13 +367,19 @@ export default function Pos({ branch, fullName }) {
                     className="w-full box-border"
                     inputMode="decimal"
                     value={form.discount}
-                    onChange={setField('discount')}
+                    onChange={(e) => setForm({ ...form, discount: filterMoney(e.target.value) })}
                   />
+                  {fieldError('discount')}
                 </label>
                 {form.payment === 'cash' && (
                   <label>
                     <span className={LABEL}>Cash received (₱)</span>
-                    <input className="w-full" inputMode="decimal" value={form.cash} onChange={setField('cash')} />
+                    <input
+                      className="w-full"
+                      inputMode="decimal"
+                      value={form.cash}
+                      onChange={(e) => setForm({ ...form, cash: filterMoney(e.target.value) })}
+                    />
                   </label>
                 )}
               </div>
@@ -377,9 +388,11 @@ export default function Pos({ branch, fullName }) {
                 <input
                   className="w-full"
                   placeholder="Optional, e.g. gas 70 food 50"
+                  maxLength={LIMITS.remarks}
                   value={form.remarks}
                   onChange={setField('remarks')}
                 />
+                {fieldError('remarks')}
               </label>
 
               <div className="flex flex-col gap-1 border-t border-(color:--border) pt-4 text-[15px] tabular-nums">
@@ -420,7 +433,8 @@ export default function Pos({ branch, fullName }) {
                 <button
                   className="min-h-[52px] flex-1 bg-brand-pine text-[17px]"
                   onClick={submit}
-                  disabled={saving || cart.length === 0}
+                  disabled={saving || cart.length === 0 || Boolean(firstError)}
+                  title={firstError || undefined}
                 >
                   {saving ? 'Saving…' : `Charge ${peso(total)}`}
                 </button>
