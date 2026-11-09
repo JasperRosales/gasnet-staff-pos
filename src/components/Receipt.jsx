@@ -67,7 +67,12 @@ export default function Receipt({ sale, branch, cashier, onClose, autoPrint = fa
           </>
         )}
         <hr className="my-2 border-dashed" />
-        <div>Customer: {sale.customerName || 'Walk-in'}</div>
+        <div>
+          Customer:{' '}
+          {sale.customerType === 'commercial'
+            ? `Commercial${sale.customerName ? ` (${sale.customerName})` : ''}`
+            : sale.customerName || 'Walk-in'}
+        </div>
         {sale.delivery && <div>For delivery: {sale.address}</div>}
         <div>Cashier: {cashier}</div>
         <div className="mt-2 text-center">Thank you!</div>

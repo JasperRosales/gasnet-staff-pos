@@ -167,6 +167,7 @@ export default function Pos({ branch, fullName }) {
         payment: form.payment,
         cash,
         customerName: form.customerName,
+        customerType: form.customerType,
         delivery: form.delivery,
         address: form.address,
         autoPrint: printMode === 'auto',
@@ -184,7 +185,17 @@ export default function Pos({ branch, fullName }) {
     <PosLayout branch={branch} fullName={fullName} tabs={TABS} active={tab} onSelect={setTab}>
       <Suspense fallback={LOADING}>
         {tab === 'today' ? (
-          <TodaySales branch={branch} onChange={refresh} onReprint={(sale) => setReceipt({ ...sale, reprint: true })} />
+          <TodaySales
+            branch={branch}
+            onChange={refresh}
+            onReprint={(sale) =>
+              setReceipt({
+                ...sale,
+                customerName: sale.customer,
+                reprint: true,
+              })
+            }
+          />
         ) : tab === 'inventory' ? (
           <Inventory branch={branch} />
         ) : (
