@@ -144,18 +144,26 @@ async function logo() {
   return logoBytes
 }
 
+const UNREACHABLE =
+  'Could not reach the printer. Check that it is on and nearby, then press Print again. ' +
+  'If it still fails, close this and press the printer button to connect it again.'
+
 // Prints one receipt. Throws with a message for the cashier when the printer is not reachable.
 export async function printReceipt({ sale, branch, cashier }) {
-  if (!channel && !(await reconnect())) {
-    throw new Error('The printer is not connected. Press "Connect printer" and choose it.')
-  }
+  if (!channel && !(await reconnect())) throw new Error(UNREACHABLE)
   const bytes = receiptBytes(receiptLines({ sale, branch, cashier, money: peso }), await logo())
   try {
     await send(bytes)
   } catch (e) {
     // the connection dropped (printer off or out of range): try once more after reconnecting
     channel = null
-    if (!(await reconnect())) throw new Error(`Could not print: ${e.message}`, { cause: e })
-    await send(bytes)
+    try {
+      if (!(await reconnect())) throw e
+      await send(bytes)
+    } catch (e2) {
+      channel = null
+      changed()
+      throw new Error(UNREACHABLE, { cause: e2 })
+    }
   }
 }
