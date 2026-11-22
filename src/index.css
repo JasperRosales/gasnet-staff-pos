@@ -164,10 +164,15 @@ input::-ms-clear {
   display: none;
 }
 
-/* Printing a receipt: only the receipt shows, sized for a small thermal printer */
+/* Printing a receipt: only the receipt shows, sized for a 58mm thermal roll (48mm print width) */
 @media print {
+  /* no page margin, so the browser does not add its date/URL header and footer to the receipt */
+  @page { margin: 0; }
   body * { visibility: hidden; }
   .print-receipt, .print-receipt * { visibility: visible; }
-  .print-receipt { position: absolute; inset: 0 auto auto 0; width: 72mm; padding: 0; box-shadow: none; }
+  .print-receipt { position: absolute; inset: 0 auto auto 0; box-sizing: border-box; width: 48mm; padding: 2mm 0; font-size: 11px; box-shadow: none; }
+  .print-receipt img { width: 40mm; }
+  /* thermal printers print grey faintly: all text solid black */
+  .print-receipt, .print-receipt * { color: #000 !important; }
   .no-print { display: none !important; }
 }

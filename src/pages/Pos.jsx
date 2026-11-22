@@ -6,6 +6,7 @@ import { checkSale, filterMoney, LIMITS } from '../lib/saleRules'
 import { confirmDialog, alertDialog } from '../lib/dialogs'
 import PosLayout from '../components/PosLayout'
 import { getPrintMode, savePrintMode } from '../lib/printSettings'
+import PrinterButton from '../components/PrinterButton'
 import { invalidate, liveRefresher } from '../lib/lazyData'
 
 // downloaded only when first opened
@@ -265,6 +266,10 @@ export default function Pos({ branch, fullName }) {
                     ))}
                   </div>
                 </div>
+              </div>
+
+              <div className="-mt-2 flex justify-end">
+                <PrinterButton />
               </div>
 
               {lines.length === 0 ? (
