@@ -5,7 +5,6 @@ export const WIDTH = 32 // characters per line on a 58mm roll (font A)
 export const LOGO_DOTS = 320 // logo width in printer dots (58mm = 384 dots; must be a multiple of 8)
 
 const ESC = 0x1b
-const GS = 0x1d
 
 // The printer's character set (code page 437) has no ₱, ×, − or accents: use plain letters
 export function plain(text) {
@@ -118,15 +117,16 @@ export function rasterImage(dots, widthDots, height) {
 
 // The whole print job as bytes. logo: bytes from rasterImage(), or null to print without it.
 export function receiptBytes(lines, logo = null) {
-  const out = [ESC, 0x40, ESC, 0x74, 0] // reset, code page 437
+  // Only the oldest ESC commands: some cheap printers (e.g. POS58D) take the job, then silently
+  // print nothing when it has a command they do not know (GS !, ESC t)
+  const out = [ESC, 0x40] // reset (code page 437 is the default)
   if (logo) out.push(ESC, 0x61, 1, ...logo)
   for (const l of lines) {
     out.push(ESC, 0x61, l.align === 'center' ? 1 : 0)
-    out.push(ESC, 0x45, l.bold ? 1 : 0)
-    out.push(GS, 0x21, l.big ? 0x11 : 0)
+    out.push(ESC, 0x21, (l.bold ? 0x08 : 0) | (l.big ? 0x30 : 0)) // bold, double height + width
     for (const part of l.text.split('\n')) out.push(...bytesOf(part), 0x0a)
   }
-  out.push(ESC, 0x45, 0, GS, 0x21, 0, ESC, 0x61, 0)
-  out.push(ESC, 0x64, 4) // feed 4 lines so the receipt clears the tear bar
+  out.push(ESC, 0x21, 0, ESC, 0x61, 0)
+  out.push(0x0a, 0x0a, 0x0a, 0x0a) // feed so the receipt clears the tear bar
   return Uint8Array.from(out)
 }

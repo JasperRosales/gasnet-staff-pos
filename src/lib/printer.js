@@ -384,7 +384,9 @@ const UNREACHABLE =
 // Prints one receipt. Throws with a message for the cashier when the printer is not reachable.
 export async function printReceipt({ sale, branch, cashier }) {
   if (!printer && !(await reconnect())) throw new Error(UNREACHABLE)
-  const bytes = receiptBytes(receiptLines({ sale, branch, cashier, money: peso }), await logo())
+  // no logo over a paired / COM port printer: the POS58D prints nothing when the job has a picture
+  const pic = printer.kind === 'serial' ? null : await logo()
+  const bytes = receiptBytes(receiptLines({ sale, branch, cashier, money: peso }), pic)
   try {
     await printer.send(bytes)
   } catch (e) {
