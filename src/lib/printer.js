@@ -23,6 +23,7 @@ const USB_CHUNK = 4096
 
 export const bluetoothSupported = () => typeof navigator !== 'undefined' && Boolean(navigator.bluetooth)
 export const usbSupported = () => typeof navigator !== 'undefined' && Boolean(navigator.usb)
+export const serialSupported = () => typeof navigator !== 'undefined' && Boolean(navigator.serial)
 
 // the connected printer: { kind, name, device, send(bytes), close() }
 let printer = null
@@ -51,10 +52,12 @@ export function printerState() {
   const s = saved()
   const bluetooth = bluetoothSupported()
   const usb = usbSupported()
+  const serial = serialSupported()
   return {
-    supported: bluetooth || usb,
+    supported: bluetooth || usb || serial,
     bluetooth,
     usb,
+    serial,
     connected: Boolean(printer),
     name: printer?.name || s?.name || null,
     kind: printer?.kind || s?.kind || null,
@@ -143,8 +146,8 @@ export async function testPrint() {
   if (!printer && !(await reconnect())) throw new Error(UNREACHABLE)
   const text = (t) => Uint8Array.from([0x1b, 0x40, ...[...t].map((c) => c.charCodeAt(0)), 0x0a, 0x0a, 0x0a, 0x0a])
   if (printer.kind !== 'bluetooth') {
-    await printer.send(text('TEST 1 (USB)'))
-    return [`USB: ${printer.name}`]
+    await printer.send(text('TEST 1'))
+    return [`DIRECT: ${printer.name}`]
   }
   const info = []
   for (const [i, c] of printer.channels.entries()) {
@@ -216,6 +219,38 @@ async function openUsb(d) {
   changed()
 }
 
+// ---- Serial: a printer paired in Windows / Mac Bluetooth settings (classic Bluetooth),
+// or a USB printer that shows up as a COM port (Web Serial: Chrome / Edge on a computer) ----
+
+const SPP = '00001101-0000-1000-8000-00805f9b34fb' // classic Bluetooth serial port
+
+async function openSerial(port) {
+  if (!port.readable && !port.writable) await port.open({ baudRate: 9600 })
+  const info = port.getInfo()
+  const name = info.bluetoothServiceClassId ? 'Bluetooth printer' : 'Serial printer'
+  if (!port.__gasnetWatch) {
+    port.__gasnetWatch = true
+    port.addEventListener('disconnect', () => dropped(port))
+  }
+  printer = {
+    kind: 'serial',
+    name,
+    device: port,
+    async send(bytes) {
+      const w = port.writable.getWriter()
+      try {
+        for (let i = 0; i < bytes.length; i += 512) await w.write(bytes.slice(i, i + 512))
+      } finally {
+        w.releaseLock()
+      }
+    },
+    close: () => port.close().catch(() => {}),
+  }
+  lastDevice = port
+  save('serial', name)
+  changed()
+}
+
 if (usbSupported()) navigator.usb.addEventListener('disconnect', (e) => dropped(e.device))
 
 // ---- choosing / reconnecting ----
@@ -223,16 +258,32 @@ if (usbSupported()) navigator.usb.addEventListener('disconnect', (e) => dropped(
 const NO_SUPPORT = {
   bluetooth: 'This browser cannot use Bluetooth. Please use Chrome or Edge (not available on iPhone).',
   usb: 'This browser cannot use USB printers. Please use Chrome or Edge (not available on iPhone).',
+  serial: 'This browser cannot use paired / COM port printers. Please use Chrome or Edge on a computer.',
 }
 
 // Opens the browser's list to choose the printer (must run from a button press).
 // kind: 'bluetooth' or 'usb' (USB: plug the printer in first, e.g. with an OTG cord)
 export async function choosePrinter(kind = 'bluetooth') {
+  if (kind === 'serial') {
+    if (!serialSupported()) throw new Error(NO_SUPPORT.serial)
+    const port = await navigator.serial.requestPort({ allowedBluetoothServiceClassIds: [SPP] })
+    return openSerial(port)
+  }
   if (kind === 'usb') {
     if (!usbSupported()) throw new Error(NO_SUPPORT.usb)
     // no filter: many cheap printers do not report the USB printer class
     const d = await navigator.usb.requestDevice({ filters: [] })
-    return openUsb(d)
+    try {
+      return await openUsb(d)
+    } catch (e) {
+      if (e.name === 'SecurityError')
+        throw new Error(
+          'The computer\'s own printer driver is using this printer, so the browser cannot. ' +
+            'Use "Paired Bluetooth / COM port" instead.',
+          { cause: e },
+        )
+      throw e
+    }
   }
   if (!bluetoothSupported()) throw new Error(NO_SUPPORT.bluetooth)
   const d = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PRINTER_SERVICES })
@@ -246,7 +297,13 @@ export async function reconnect() {
   const s = saved()
   if (!s) return false
   try {
-    if (s.kind === 'usb') {
+    if (s.kind === 'serial') {
+      if (!serialSupported()) return false
+      const known = await navigator.serial.getPorts()
+      const d = (lastDevice && known.includes(lastDevice) ? lastDevice : null) ?? (known.length === 1 ? known[0] : null)
+      if (!d) return false
+      await openSerial(d)
+    } else if (s.kind === 'usb') {
       if (!usbSupported()) return false
       const known = await navigator.usb.getDevices()
       const d =

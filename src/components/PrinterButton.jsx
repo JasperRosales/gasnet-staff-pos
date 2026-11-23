@@ -3,7 +3,11 @@ import { choosePrinter, forgetPrinter, reconnect, testPrint, pickChannel } from 
 import { usePrinter } from '../lib/usePrinter'
 import { alertDialog, confirmDialog } from '../lib/dialogs'
 
-const KIND_LABEL = { bluetooth: 'Bluetooth', usb: 'USB cable (OTG)' }
+const KIND_LABEL = {
+  bluetooth: 'Bluetooth (direct)',
+  serial: 'Paired Bluetooth / COM port',
+  usb: 'USB cable',
+}
 
 // "Connect printer": pairs the receipt printer once (Bluetooth, or USB / OTG cord);
 // receipts then print straight to it
@@ -14,7 +18,7 @@ export default function PrinterButton() {
   const [menu, setMenu] = useState(false) // connected: Test print / Disconnect
   if (!printer.supported) return null // e.g. iPhone: receipts use the browser's print window
 
-  const kinds = ['bluetooth', 'usb'].filter((k) => printer[k])
+  const kinds = ['bluetooth', 'serial', 'usb'].filter((k) => printer[k])
 
   const connect = async (kind) => {
     setPicking(false)
@@ -51,7 +55,7 @@ export default function PrinterButton() {
     try {
       const info = await testPrint()
       setBusy(false)
-      if (info.length === 1 && info[0].startsWith('USB')) return
+      if (info.length === 1 && info[0].startsWith('DIRECT')) return
       const n = window.prompt(`Which TEST number printed? Leave empty if none.\n\n${info.join('\n')}`)
       if (n && pickChannel(Number(n))) return alertDialog(`Receipts will use channel ${n}.`, 'Printer set')
       if (!n) await alertDialog(`Nothing printed. Please send this to support:\n\n${printer.name}\n${info.join('\n')}`, 'Printer details')
@@ -82,7 +86,7 @@ export default function PrinterButton() {
         {busy
           ? 'Connecting…'
           : printer.connected
-            ? `🖨 ${printer.name || 'Printer'}${printer.kind === 'usb' ? ' (USB)' : ''}`
+            ? `🖨 ${printer.name || 'Printer'}${printer.kind === 'usb' ? ' (USB)' : printer.kind === 'serial' ? ' (paired)' : ''}`
             : printer.name
               ? `Reconnect ${printer.name}`
               : 'Connect printer'}
@@ -105,8 +109,13 @@ export default function PrinterButton() {
               {KIND_LABEL[k]}
             </button>
           ))}
+          {printer.serial && (
+            <div className="px-1 text-[12px] text-gray-500">
+              Paired: pair the printer in the computer's Bluetooth settings first (PIN is often 0000 or 1234).
+            </div>
+          )}
           {printer.usb && (
-            <div className="px-1 text-[12px] text-gray-500">For USB: plug the printer in with the OTG cord first.</div>
+            <div className="px-1 text-[12px] text-gray-500">For USB: plug the printer in first (phones: OTG cord).</div>
           )}
         </div>
       )}
