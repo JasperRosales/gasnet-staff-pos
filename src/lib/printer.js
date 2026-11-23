@@ -103,12 +103,11 @@ const channelId = (c) => `${c.service.uuid}/${c.uuid}`
 async function writeChannel(channel, bytes) {
   for (let i = 0; i < bytes.length; i += BT_CHUNK) {
     const part = bytes.slice(i, i + BT_CHUNK)
-    if (channel.properties.write) {
-      await channel.writeValueWithResponse(part)
-    } else {
-      await channel.writeValueWithoutResponse(part)
-      await wait(15)
-    }
+    if (channel.properties.write) await channel.writeValueWithResponse(part)
+    else await channel.writeValueWithoutResponse(part)
+    // the printer's Bluetooth chip passes data on at ~960 bytes a second and drops the rest,
+    // even after answering a write: 20 bytes / 30 ms keeps under that
+    await wait(30)
   }
 }
 
@@ -384,9 +383,8 @@ const UNREACHABLE =
 // Prints one receipt. Throws with a message for the cashier when the printer is not reachable.
 export async function printReceipt({ sale, branch, cashier }) {
   if (!printer && !(await reconnect())) throw new Error(UNREACHABLE)
-  // no logo over a paired / COM port printer: the POS58D prints nothing when the job has a picture
-  const pic = printer.kind === 'serial' ? null : await logo()
-  const bytes = receiptBytes(receiptLines({ sale, branch, cashier, money: peso }), pic)
+  // no logo: the POS58D printed nothing when the job had a picture (text-only receipts print)
+  const bytes = receiptBytes(receiptLines({ sale, branch, cashier, money: peso }))
   try {
     await printer.send(bytes)
   } catch (e) {
