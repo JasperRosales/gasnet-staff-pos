@@ -146,7 +146,11 @@ export async function testPrint() {
   if (!printer && !(await reconnect())) throw new Error(UNREACHABLE)
   const text = (t) => Uint8Array.from([0x1b, 0x40, ...[...t].map((c) => c.charCodeAt(0)), 0x0a, 0x0a, 0x0a, 0x0a])
   if (printer.kind !== 'bluetooth') {
-    await printer.send(text('TEST 1'))
+    // text, then the logo, then text: shows whether the logo is what stops a receipt printing
+    await printer.send(text('TEST 1 (text)'))
+    const pic = await logo()
+    if (pic) await printer.send(Uint8Array.from([0x1b, 0x40, 0x1b, 0x61, 1, ...pic]))
+    await printer.send(text('TEST 2 (after logo)'))
     return [`DIRECT: ${printer.name}`]
   }
   const info = []

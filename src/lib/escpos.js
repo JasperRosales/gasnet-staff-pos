@@ -94,27 +94,32 @@ export function receiptLines({ sale, branch, cashier, money }) {
   return out
 }
 
-// A black-and-white picture as printer bytes (GS v 0). dots: one boolean per pixel, row by row.
-// Sent in bands of BAND rows: cheap printers drop one big picture that overflows their small buffer.
-const BAND = 24
+// A black-and-white picture as printer bytes. dots: one boolean per pixel, row by row.
+// Uses ESC * (24-dot bit image), which nearly every cheap printer understands; some (e.g. POS58D)
+// ignore the newer GS v 0 and then print nothing after it. One band of 24 rows per printed line.
 export function rasterImage(dots, widthDots, height) {
-  const bytesPerRow = widthDots / 8
-  const out = []
-  for (let y0 = 0; y0 < height; y0 += BAND) {
-    const h = Math.min(BAND, height - y0)
-    const data = new Array(bytesPerRow * h).fill(0)
-    for (let y = 0; y < h; y++)
-      for (let x = 0; x < widthDots; x++)
-        if (dots[(y0 + y) * widthDots + x]) data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7)
-    out.push(GS, 0x76, 0x30, 0, bytesPerRow & 0xff, bytesPerRow >> 8, h & 0xff, h >> 8, ...data)
+  const out = [ESC, 0x33, 24] // line spacing = 24 dots, so the bands touch
+  for (let y0 = 0; y0 < height; y0 += 24) {
+    out.push(ESC, 0x2a, 33, widthDots & 0xff, widthDots >> 8)
+    for (let x = 0; x < widthDots; x++)
+      for (let k = 0; k < 3; k++) {
+        let b = 0
+        for (let bit = 0; bit < 8; bit++) {
+          const y = y0 + k * 8 + bit
+          if (y < height && dots[y * widthDots + x]) b |= 0x80 >> bit
+        }
+        out.push(b)
+      }
+    out.push(0x0a)
   }
+  out.push(ESC, 0x32) // normal line spacing again
   return out
 }
 
 // The whole print job as bytes. logo: bytes from rasterImage(), or null to print without it.
 export function receiptBytes(lines, logo = null) {
   const out = [ESC, 0x40, ESC, 0x74, 0] // reset, code page 437
-  if (logo) out.push(ESC, 0x61, 1, ...logo, 0x0a)
+  if (logo) out.push(ESC, 0x61, 1, ...logo)
   for (const l of lines) {
     out.push(ESC, 0x61, l.align === 'center' ? 1 : 0)
     out.push(ESC, 0x45, l.bold ? 1 : 0)

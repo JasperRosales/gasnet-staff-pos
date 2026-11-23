@@ -48,5 +48,9 @@ test('rasterImage packs 8 dots a byte', () => {
   const dots = Array(16).fill(false)
   dots[0] = true
   dots[9] = true
-  assert.deepEqual(rasterImage(dots, 8, 2), [0x1d, 0x76, 0x30, 0, 1, 0, 2, 0, 0x80, 0x40])
+  // ESC * 33, 8 columns of 3 bytes; column 0 has row 0 set, column 1 has row 1 set
+  const cols = Array(24).fill(0)
+  cols[0] = 0x80
+  cols[3] = 0x40
+  assert.deepEqual(rasterImage(dots, 8, 2), [0x1b, 0x33, 24, 0x1b, 0x2a, 33, 8, 0, ...cols, 0x0a, 0x1b, 0x32])
 })
