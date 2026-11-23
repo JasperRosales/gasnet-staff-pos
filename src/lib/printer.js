@@ -16,7 +16,9 @@ const PRINTER_SERVICES = [
   '0000fee7-0000-1000-8000-00805f9b34fb',
 ]
 const SAVED_KEY = 'gasnet-pos-bt-printer' // { kind: 'bluetooth' | 'usb', name } (older: just the name)
-const BT_CHUNK = 100 // bytes sent at a time over Bluetooth
+// bytes sent at a time over Bluetooth: 20 fits the smallest BLE packet (MTU 23). Bigger writes
+// get cut off or dropped silently by many cheap printers, so only a bit of paper feeds out.
+const BT_CHUNK = 20
 const USB_CHUNK = 4096
 
 export const bluetoothSupported = () => typeof navigator !== 'undefined' && Boolean(navigator.bluetooth)
@@ -75,9 +77,17 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function findChannel(server) {
   const services = await server.getPrimaryServices()
+  // known printer services first, in PRINTER_SERVICES order
+  const rank = (s) => {
+    const i = PRINTER_SERVICES.indexOf(s.uuid.toLowerCase())
+    return i < 0 ? PRINTER_SERVICES.length : i
+  }
+  services.sort((a, b) => rank(a) - rank(b))
   for (const s of services) {
     const chars = await s.getCharacteristics().catch(() => [])
-    const c = chars.find((ch) => ch.properties.writeWithoutResponse || ch.properties.write)
+    // prefer write-without-response (the print data channel); fall back to plain write
+    const c =
+      chars.find((ch) => ch.properties.writeWithoutResponse) ?? chars.find((ch) => ch.properties.write)
     if (c) return c
   }
   throw new Error('This Bluetooth device does not accept print data. Is it a thermal printer?')
@@ -100,7 +110,7 @@ async function openBluetooth(d) {
         const part = bytes.slice(i, i + BT_CHUNK)
         if (noReply) {
           await channel.writeValueWithoutResponse(part)
-          await wait(20) // let the printer's small buffer keep up
+          await wait(10) // let the printer's small buffer keep up
         } else {
           await channel.writeValueWithResponse(part)
         }

@@ -95,13 +95,20 @@ export function receiptLines({ sale, branch, cashier, money }) {
 }
 
 // A black-and-white picture as printer bytes (GS v 0). dots: one boolean per pixel, row by row.
+// Sent in bands of BAND rows: cheap printers drop one big picture that overflows their small buffer.
+const BAND = 24
 export function rasterImage(dots, widthDots, height) {
   const bytesPerRow = widthDots / 8
-  const data = new Array(bytesPerRow * height).fill(0)
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < widthDots; x++)
-      if (dots[y * widthDots + x]) data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7)
-  return [GS, 0x76, 0x30, 0, bytesPerRow & 0xff, bytesPerRow >> 8, height & 0xff, height >> 8, ...data]
+  const out = []
+  for (let y0 = 0; y0 < height; y0 += BAND) {
+    const h = Math.min(BAND, height - y0)
+    const data = new Array(bytesPerRow * h).fill(0)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < widthDots; x++)
+        if (dots[(y0 + y) * widthDots + x]) data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7)
+    out.push(GS, 0x76, 0x30, 0, bytesPerRow & 0xff, bytesPerRow >> 8, h & 0xff, h >> 8, ...data)
+  }
+  return out
 }
 
 // The whole print job as bytes. logo: bytes from rasterImage(), or null to print without it.
