@@ -75,28 +75,50 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ---- Bluetooth ----
 
-async function findChannel(server) {
+// every characteristic that accepts data, known printer services first
+async function findChannels(server) {
   const services = await server.getPrimaryServices()
-  // known printer services first, in PRINTER_SERVICES order
   const rank = (s) => {
     const i = PRINTER_SERVICES.indexOf(s.uuid.toLowerCase())
     return i < 0 ? PRINTER_SERVICES.length : i
   }
   services.sort((a, b) => rank(a) - rank(b))
+  const out = []
   for (const s of services) {
     const chars = await s.getCharacteristics().catch(() => [])
-    // prefer write-without-response (the print data channel); fall back to plain write
-    const c =
-      chars.find((ch) => ch.properties.writeWithoutResponse) ?? chars.find((ch) => ch.properties.write)
-    if (c) return c
+    for (const ch of chars) if (ch.properties.writeWithoutResponse || ch.properties.write) out.push(ch)
   }
-  throw new Error('This Bluetooth device does not accept print data. Is it a thermal printer?')
+  if (!out.length) throw new Error('This Bluetooth device does not accept print data. Is it a thermal printer?')
+  return out
+}
+
+const CHANNEL_KEY = 'gasnet-pos-bt-channel' // the channel a test print proved works
+const channelId = (c) => `${c.service.uuid}/${c.uuid}`
+
+// writes bytes to one characteristic in small pieces. With "write" (the printer answers each
+// piece) the printer sets the pace, so its buffer never overflows; else pause between pieces.
+async function writeChannel(channel, bytes) {
+  for (let i = 0; i < bytes.length; i += BT_CHUNK) {
+    const part = bytes.slice(i, i + BT_CHUNK)
+    if (channel.properties.write) {
+      await channel.writeValueWithResponse(part)
+    } else {
+      await channel.writeValueWithoutResponse(part)
+      await wait(15)
+    }
+  }
 }
 
 async function openBluetooth(d) {
   const server = await d.gatt.connect()
-  const channel = await findChannel(server)
-  const noReply = channel.properties.writeWithoutResponse
+  const channels = await findChannels(server)
+  let pick = null
+  try {
+    pick = localStorage.getItem(CHANNEL_KEY)
+  } catch {
+    // storage blocked
+  }
+  const channel = channels.find((c) => channelId(c) === pick) ?? channels[0]
   if (!d.__gasnetWatch) {
     d.__gasnetWatch = true
     d.addEventListener('gattserverdisconnected', () => dropped(d))
@@ -105,22 +127,51 @@ async function openBluetooth(d) {
     kind: 'bluetooth',
     name: d.name || 'Printer',
     device: d,
-    async send(bytes) {
-      for (let i = 0; i < bytes.length; i += BT_CHUNK) {
-        const part = bytes.slice(i, i + BT_CHUNK)
-        if (noReply) {
-          await channel.writeValueWithoutResponse(part)
-          await wait(10) // let the printer's small buffer keep up
-        } else {
-          await channel.writeValueWithResponse(part)
-        }
-      }
-    },
+    channels,
+    channel,
+    send: (bytes) => writeChannel(printer.channel, bytes),
     close: () => d.gatt?.disconnect(),
   }
   lastDevice = d
   save('bluetooth', printer.name)
   changed()
+}
+
+// Sends "TEST 1", "TEST 2", ... down every channel the printer offers, so the cashier can say
+// which one printed. Returns a description of each channel (shown when none printed).
+export async function testPrint() {
+  if (!printer && !(await reconnect())) throw new Error(UNREACHABLE)
+  const text = (t) => Uint8Array.from([0x1b, 0x40, ...[...t].map((c) => c.charCodeAt(0)), 0x0a, 0x0a, 0x0a, 0x0a])
+  if (printer.kind !== 'bluetooth') {
+    await printer.send(text('TEST 1 (USB)'))
+    return [`USB: ${printer.name}`]
+  }
+  const info = []
+  for (const [i, c] of printer.channels.entries()) {
+    const props = Object.entries(c.properties).filter(([, v]) => v).map(([k]) => k).join(',')
+    let result = 'sent'
+    try {
+      await writeChannel(c, text(`TEST ${i + 1}`))
+    } catch (e) {
+      result = `${e.name}: ${e.message}`
+    }
+    info.push(`${i + 1}. ${c.service.uuid.slice(0, 8)} / ${c.uuid.slice(0, 8)} [${props}] ${result}`)
+    await wait(500)
+  }
+  return info
+}
+
+// remembers the channel that printed (n from testPrint: 1, 2, ...)
+export function pickChannel(n) {
+  const c = printer?.channels?.[n - 1]
+  if (!c) return false
+  printer.channel = c
+  try {
+    localStorage.setItem(CHANNEL_KEY, channelId(c))
+  } catch {
+    // storage blocked
+  }
+  return true
 }
 
 // ---- USB (OTG cord) ----
@@ -143,8 +194,8 @@ async function openUsb(d) {
   if (!iface.claimed) {
     try {
       await d.claimInterface(iface.interfaceNumber)
-    } catch {
-      throw new Error('The printer is busy (another app may be using it). Close other printer apps and try again.')
+    } catch (e) {
+      throw new Error(`The printer is busy (another app may be using it). Close other printer apps and try again. (${e.name}: ${e.message})`, { cause: e })
     }
   }
   if (iface.alternates.length > 1) await d.selectAlternateInterface(iface.interfaceNumber, alt.alternateSetting)
@@ -227,6 +278,7 @@ export function forgetPrinter() {
   lastDevice = null
   try {
     localStorage.removeItem(SAVED_KEY)
+    localStorage.removeItem(CHANNEL_KEY)
   } catch {
     // storage blocked
   }
