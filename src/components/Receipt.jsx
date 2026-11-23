@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
 import { peso } from '../lib/money'
 import { branchName } from '../lib/branches'
-import { printReceipt } from '../lib/btPrinter'
+import { printReceipt } from '../lib/printer'
 import { usePrinter } from '../lib/usePrinter'
 
-// The receipt after a sale. Print sends it straight to the Bluetooth printer when one was
+// The receipt after a sale. Print sends it straight to the Bluetooth / USB printer when one was
 // connected (no print window); otherwise to the browser's print window (only the receipt prints).
 // autoPrint: prints right away and closes the receipt when printing is done.
 export default function Receipt({ sale, branch, cashier, onClose, autoPrint = false }) {

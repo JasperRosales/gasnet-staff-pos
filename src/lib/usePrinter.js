@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { onPrinterChange, printerState } from './btPrinter'
+import { onPrinterChange, printerState } from './printer'
 
-// The Bluetooth printer's state, kept up to date: { supported, connected, name }
+// The receipt printer's state, kept up to date (see printerState)
 export function usePrinter() {
   const [state, setState] = useState(printerState)
   useEffect(() => onPrinterChange(setState), [])
