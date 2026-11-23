@@ -222,6 +222,8 @@ async function openUsb(d) {
 // ---- Serial: a printer paired in Windows / Mac Bluetooth settings (classic Bluetooth),
 // or a USB printer that shows up as a COM port (Web Serial: Chrome / Edge on a computer) ----
 
+const SERIAL_CHUNK = 64
+const SERIAL_PAUSE = 80 // ms: 64 bytes / 80 ms = 800 bytes a second
 const SPP = '00001101-0000-1000-8000-00805f9b34fb' // classic Bluetooth serial port
 
 async function openSerial(port) {
@@ -239,7 +241,12 @@ async function openSerial(port) {
     async send(bytes) {
       const w = port.writable.getWriter()
       try {
-        for (let i = 0; i < bytes.length; i += 512) await w.write(bytes.slice(i, i + 512))
+        // the printer's Bluetooth chip passes data on at about 9600 baud (~960 bytes a second)
+        // and drops what does not fit its small buffer, so a long receipt got cut off: pace it
+        for (let i = 0; i < bytes.length; i += SERIAL_CHUNK) {
+          await w.write(bytes.slice(i, i + SERIAL_CHUNK))
+          await wait(SERIAL_PAUSE)
+        }
       } finally {
         w.releaseLock()
       }
